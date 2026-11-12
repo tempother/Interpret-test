@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#f5f4ee">
+<title>Interprète — test UX</title>
+<style>
+body{font-family:-apple-system,system-ui,sans-serif;background:#f5f4ee;color:#182822;margin:0 auto;padding:16px;max-width:560px}
+h1{font-size:1.4rem;margin:0 0 8px}
+p{line-height:1.5;margin:0 0 10px;color:#4e635a}
+button{font:inherit;border:0;border-radius:10px;min-height:48px;cursor:pointer}
+#unlock,#start{width:100%;background:#1c503c;color:#fff;font-weight:700}
+#start.rec{background:#84352b}
+input{width:100%;padding:12px;font-size:16px;border:1px solid #d9ded3;border-radius:8px;margin:8px 0}
+.spk{display:flex;gap:6px;margin:12px 0}
+.spk button{flex:1;background:#fff;border:1px solid #d9ded3}
+.spk [data-s="1"]{color:#0a7}.spk [data-s="2"]{color:#b80}.spk [data-s="3"]{color:#a0a}
+.e{background:#fff;border-left:4px solid;padding:8px 12px;margin:10px 0;border-radius:6px}
+.e[data-s="1"]{border-color:#0a7}.e[data-s="2"]{border-color:#b80}.e[data-s="3"]{border-color:#a0a}
+.e .m{font-size:.8rem;color:#4e635a;margin:0 0 4px}
+.e .t{margin:0}
+#st{font-size:.9rem;margin:8px 0}
+</style>
+</head>
+<body>
+<div id="gate">
+<h1>Interprète</h1>
+<p>Test UX. Mot de passe requis.</p>
+<input id="pwd" type="password" placeholder="Mot de passe">
+<button id="unlock">Entrer</button>
+<p id="err" style="color:#b33;font-size:.85rem"></p>
+</div>
+<div id="app" hidden>
+<h1>Interprète <small style="font-weight:400;color:#4e635a">test UX</small></h1>
+<p id="st">Prêt</p>
+<button id="start">Démarrer</button>
+<div class="spk">
+<button data-s="1">Pers. 1</button>
+<button data-s="2">Pers. 2</button>
+<button data-s="3">Pers. 3</button>
+</div>
+<div id="list"></div>
+</div>
+<script>
+const PW='test1234';
+const NEW_SPK=2500,MIN_SP=300,END_SIL=700;
+const $=id=>document.getElementById(id);
+$('unlock').onclick=()=>{if($('pwd').value===PW){$('gate').hidden=true;$('app').hidden=false}else $('err').textContent='Incorrect'};
+let ac,stream,an,raf,run=false,spk=1,override=null,speaking=false,spStart=0,lastVoice=0,silBefore=0,hasSpoken=false;
+document.querySelectorAll('.spk button').forEach(b=>b.onclick=()=>{override=+b.dataset.s;setSt('Prochaine : Personne '+override)});
+function setSt(t){$('st').textContent=t}
+function assign(){if(override!==null){const o=override;override=null;spk=o;return spk}if(!hasSpoken){hasSpoken=true;return spk}if(silBefore>=NEW_SPK)spk=(spk%3)+1;return spk}
+function addEntry(s,dur){const el=document.createElement('div');el.className='e';el.dataset.s=s;const t=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});el.innerHTML='<p class="m">Personne '+s+' · '+t+' · '+(dur/1000).toFixed(1)+'s</p><p class="t">[phrase détectée · transcription simulée]</p>';$('list').prepend(el)}
+function tick(){if(!run)return;const d=new Uint8Array(an.fftSize);an.getByteTimeDomainData(d);let s=0;for(let i=0;i<d.length;i++){const v=(d[i]-128)/128;s+=v*v}const rms=Math.sqrt(s/d.length),voice=rms>0.02,now=performance.now();if(voice){if(!speaking){speaking=true;spStart=now;silBefore=lastVoice?now-lastVoice:0;setSt('Écoute…')}lastVoice=now}else if(speaking){if(now-lastVoice>=END_SIL){const dur=lastVoice-spStart;speaking=false;if(dur>=MIN_SP){const s2=assign();addEntry(s2,dur);setSt('Personne '+s2+' · prêt')}}}raf=requestAnimationFrame(tick)}
+$('start').onclick=async()=>{if(run){run=false;cancelAnimationFrame(raf);stream?.getTracks().forEach(t=>t.stop());await ac?.close();$('start').textContent='Démarrer';$('start').classList.remove('rec');setSt('Arrêté');return}try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});ac=new(window.AudioContext||window.webkitAudioContext)();await ac.resume();const src=ac.createMediaStreamSource(stream);an=ac.createAnalyser();an.fftSize=1024;src.connect(an);run=true;speaking=false;lastVoice=performance.now();$('start').textContent='Arrêter';$('start').classList.add('rec');setSt('Micro actif');tick()}catch(e){setSt('Micro refusé : '+e.message)}};
+document.addEventListener('visibilitychange',()=>{if(ac&&ac.state==='suspended')ac.resume()});
+</script>
+</body>
+</html>
